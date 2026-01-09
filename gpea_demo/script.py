@@ -6,7 +6,7 @@ from typing import List, Literal
 
 from openai import api_key
 
-from custom_lm.glm_lm import LmGlm
+from custom_lm.lms import LmGlm
 from gpea_demo.init_dataset import init_dataset
 from gpea_demo.metrics import metric
 from gpea_demo.predictions import metric_with_feedback

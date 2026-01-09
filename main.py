@@ -1,8 +1,7 @@
 import dspy
+from typing import Optional
 import logging
-from draft_article import DraftArticle
 from optimizer import setup_optimizer
-from simple_qa import ask_simple_qa
 
 
 logging.basicConfig(level=logging.INFO)
@@ -17,10 +16,17 @@ def create_lm():
     return lm
 
 
-def init_dspy(lm: dspy.LM):
+def init_dspy(lm: Optional[dspy.LM] = None):
     logging.info("Initializing dspy with local Ollama LLM...")
     logging.info("Configuring dspy...")
-    dspy.configure(lm=lm, logging=True)
+    if lm is None:
+        lm = create_lm()
+
+    dspy.configure(
+        lm=lm,
+        logging=True,
+    )
+    logging.info("dspy configuration complete.")
     logging.info("dspy configuration complete.")
 
 
