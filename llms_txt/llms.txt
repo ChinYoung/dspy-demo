@@ -1,0 +1,15 @@
+Prediction(
+    llms_txt_content='# Project Information\n\n> No repository information was provided to generate this file.\n\n## Project Purpose\nNone\n\n## Key Concepts\nNone\n\n## Architecture Overview\nNone\n\n## Important Directories\nNone\n\n## Entry Points\nNone\n\n## Development Info\nNone\n\n## Usage Examples\nNo usage examples can be generated because the repository information is empty.',
+    analysis=Prediction(
+    reasoning=None,
+    project_purpose=None,
+    key_concepts=None,
+    architecture_overview=None
+),
+    structure=Prediction(
+    reasoning=None,
+    important_directories=None,
+    entry_points=None,
+    development_info=None
+)
+)

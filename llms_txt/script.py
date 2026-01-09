@@ -1,12 +1,5 @@
 from pathlib import Path
-import sys
-
-try:
-    from custom_lm.glm_lm import LmGlm
-except ModuleNotFoundError:
-    # Ensure project root is on sys.path when running this file directly
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from custom_lm.glm_lm import LmGlm
+from custom_lm.glm_lm import LmGlm
 from init_dspy import init_dspy
 
 from llms_txt.RepoAnalyzer import RepositoryAnalyzer
