@@ -17,8 +17,9 @@ def create_lm(model: str = "ollama/qwen2.5:3b-instruct") -> dspy.LM:
     return lm
 
 
-def init_dspy():
-    lm = create_lm()
+def init_dspy(lm=None):
+    if lm is None:
+        lm = create_lm()
     logging.info("Initializing dspy with local Ollama LLM...")
     logging.info("Configuring dspy...")
     dspy.configure(lm=lm, logging=True)

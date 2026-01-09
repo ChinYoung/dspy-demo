@@ -6,6 +6,7 @@ from typing import List, Literal
 
 from openai import api_key
 
+from custom_lm.glm_lm import LmGlm
 from gpea_demo.init_dataset import init_dataset
 from gpea_demo.metrics import metric
 from gpea_demo.predictions import metric_with_feedback
@@ -48,7 +49,7 @@ def main():
         display_progress=True,
     )
     # evaluate(program)
-    reflect_lm = create_lm(model="ollama/llama3.2")
+    reflect_lm = LmGlm()
     optimizer = GEPA(
         metric=metric_with_feedback,
         auto="light",  # <-- We will use a light budget for this tutorial. However, we typically recommend using auto="heavy" for optimized performance!
