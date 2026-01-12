@@ -1,8 +1,5 @@
 import dspy
 import logging
-from draft_article import DraftArticle
-from optimizer import setup_optimizer
-from simple_qa import ask_simple_qa
 
 
 logging.basicConfig(level=logging.INFO)

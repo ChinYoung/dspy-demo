@@ -1,12 +1,6 @@
 import dspy
-import json
-import random
-from pathlib import Path
-from typing import List, Literal
 
-from openai import api_key
-
-from custom_lm.lms import LmGlm
+from lib.custom_lm.lms import Lm_Glm
 from gpea_demo.init_dataset import init_dataset
 from gpea_demo.metrics import metric
 from gpea_demo.predictions import metric_with_feedback
@@ -15,7 +9,7 @@ from gpea_demo.signatures import (
     FacilitySupportAnalyzerSentiment,
     FacilitySupportAnalyzerUrgency,
 )
-from init_dspy import create_lm, init_dspy
+from lib.dspy_utils import init_dspy
 from dspy import GEPA
 
 
@@ -49,7 +43,7 @@ def main():
         display_progress=True,
     )
     # evaluate(program)
-    reflect_lm = LmGlm()
+    reflect_lm = Lm_Glm
     optimizer = GEPA(
         metric=metric_with_feedback,
         auto="light",  # <-- We will use a light budget for this tutorial. However, we typically recommend using auto="heavy" for optimized performance!

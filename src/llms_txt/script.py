@@ -1,6 +1,6 @@
 from pathlib import Path
-from custom_lm.lms import Lm_Glm
-from init_dspy import init_dspy
+from lib.custom_lm.lms import Lm_Glm
+from lib.dspy_utils import init_dspy
 
 from llms_txt.RepoAnalyzer import RepositoryAnalyzer
 from llms_txt.utils import gather_repository_info

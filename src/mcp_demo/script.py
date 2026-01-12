@@ -1,6 +1,6 @@
 import asyncio
-from custom_lm.lms import Lm_Glm
-from main import init_dspy
+from lib.custom_lm.lms import Lm_Glm
+from lib.dspy_utils import init_dspy
 from mcp_demo.dspy_tools import resolve_user_request
 
 
