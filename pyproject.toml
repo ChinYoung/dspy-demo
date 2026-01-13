@@ -15,3 +15,4 @@ dependencies = [
 
 [project.scripts]
 hotday = "hotboard_assist.cli:run"
+planner = "multi_step_agent.cli:run"
