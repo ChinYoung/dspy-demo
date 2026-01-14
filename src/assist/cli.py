@@ -10,14 +10,14 @@ from fastmcp import Client, FastMCP
 from lib.utils import parse_args
 
 
+client = Client("http://127.0.0.1:8999/mcp")
+
+
 class DSPyAssistantService(dspy.Signature):
     """You are a assistant agent. You are expect to help users get informations they need."""
 
     user_request: str = dspy.InputField()
     process_result: str = dspy.OutputField(desc=("使用中文回答"))
-
-
-client = Client("http://127.0.0.1:8999/mcp")
 
 
 def run():
