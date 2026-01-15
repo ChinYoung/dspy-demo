@@ -16,3 +16,4 @@ dependencies = [
 [project.scripts]
 assist = "assist.cli:run"
 planner = "multi_step_agent.cli:run"
+chat = "chat.cli:run"
