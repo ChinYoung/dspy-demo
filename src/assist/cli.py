@@ -34,12 +34,7 @@ async def run_async():
 async def resolve_user_request(user_request: str):
     dspy_utils.init_dspy(Lm_Glm)
     async with client:
-        tools = await client.list_tools()
-        logging.info(f"Available tools: {tools}")
-        dspy_tools = []
-        for tool in tools:
-            dspy_tools.append(dspy.Tool.from_mcp_tool(client.session, tool))
-
+        dspy_tools = await dspy_utils.list_tools(client)
         # Create the agent
         react = dspy.ReAct(DSPyAssistantService, tools=dspy_tools)
         res = await react.acall(user_request=user_request)

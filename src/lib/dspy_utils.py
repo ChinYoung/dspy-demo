@@ -1,5 +1,6 @@
 import dspy
 import logging
+from fastmcp import Client
 
 
 logging.basicConfig(level=logging.INFO)
@@ -21,3 +22,13 @@ def init_dspy(lm=None):
     logging.info("Configuring dspy...")
     dspy.configure(lm=lm, logging=True)
     logging.info("dspy configuration complete.")
+
+
+async def list_tools(client: Client):
+    dspy_tools = []
+    async with client:
+        tools = await client.list_tools()
+        for tool in tools:
+            logging.info(f"Found tool: {tool.name} - {tool.description}")
+            dspy_tools.append(dspy.Tool.from_mcp_tool(client.session, tool))
+    return dspy_tools

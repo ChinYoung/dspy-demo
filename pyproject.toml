@@ -5,9 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "chromadb>=1.4.1",
     "datasets<4.0.0",
     "dspy[mcp]>=3.0.4",
     "fastmcp>=2.14.2",
+    "mem0ai>=1.0.2",
+    "ollama>=0.6.1",
     "requests>=2.32.5",
     "zai-sdk>=0.2.0",
 ]
@@ -16,3 +19,5 @@ dependencies = [
 [project.scripts]
 assist = "assist.cli:run"
 planner = "multi_step_agent.cli:run"
+chat = "chat.cli:run"
+mem = "mem.cli:run_memory_agent_demo"
