@@ -20,12 +20,6 @@ litellm.drop_params = True
 logging.basicConfig(level=logging.DEBUG)
 
 
-# Configure environment
-load_dotenv()
-logging.info(os.environ)
-os.environ["ZAI_API_KEY"] = "11a7a9a15d5441cdbfe92cef458da6b8.1SuNZYfmjyR9Q94A"
-# Initialize Mem0 memory system
-
 config = {
     "llm": {
         "provider": "litellm",
@@ -56,8 +50,7 @@ config = {
 def run_memory_agent_demo():
     """Demonstration of memory-enhanced ReAct agent."""
     load_dotenv()
-    logging.info(os.environ)
-    os.environ["ZAI_API_KEY"] = "11a7a9a15d5441cdbfe92cef458da6b8.1SuNZYfmjyR9Q94A"
+    logging.info(os.environ["ZAI_API_KEY"])
     lm = Lm_Glm
     litellm.drop_params = True
 
