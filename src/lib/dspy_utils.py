@@ -32,3 +32,16 @@ async def list_tools(client: Client):
             logging.info(f"Found tool: {tool.name} - {tool.description}")
             dspy_tools.append(dspy.Tool.from_mcp_tool(client.session, tool))
     return dspy_tools
+
+
+def load_env_variable():
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    api_key = os.getenv("ZAI_API_KEY")
+    if api_key:
+        logging.info("ZAI_API_KEY loaded successfully.")
+    else:
+        logging.warning("ZAI_API_KEY not found in environment variables.")
+    return api_key

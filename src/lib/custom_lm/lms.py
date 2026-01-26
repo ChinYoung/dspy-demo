@@ -4,7 +4,7 @@ import dspy
 
 
 Lm_Glm = dspy.LM(
-    model="zai/glm-4.7-Flash",
+    model="zai/glm-4.7",
 )
 
 
