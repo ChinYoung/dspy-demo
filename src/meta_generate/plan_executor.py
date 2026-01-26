@@ -43,9 +43,13 @@ ToolFunction = Callable[..., Any]
 
 
 class GenerateDAGPlan(dspy.Signature):
-    user_request: str = dspy.InputField()
+    """
+    create a DAG plan in JSON format with provided utils to generate mock data for all the tables, insert into database.
+    - ** respecting foreign key constraints **
+    - ** Use provided tools only **
+    """
     plan: str = dspy.OutputField(
-        desc="JSON with 'steps' array. Each step has 'id', 'tool', 'args'. Use @<step_id>.<field> to reference results."
+        desc="JSON with 'steps' array. Each step has 'id', 'tool', 'args', 'desc'. Use @<step_id>.<field> to reference results."
     )
 
 

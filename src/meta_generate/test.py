@@ -1,5 +1,5 @@
 import logging
-from meta_generate.utils import generate_mock_data
+from meta_generate.utils import generate_with_mock_func
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -188,5 +188,5 @@ def generate_mock_data(n: int):
 
 def run():
     logging.info("Testing generated mock data execution...")
-    res = generate_mock_data(generated_mock, 10)
+    res = generate_with_mock_func(generated_mock, 10)
     logging.info(res)

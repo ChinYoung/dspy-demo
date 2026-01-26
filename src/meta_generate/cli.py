@@ -9,12 +9,11 @@ from lib.dspy_utils import list_tools, load_env_variable
 from lib.utils import parse_args
 from fastmcp import Client
 
-from meta_generate.generator import generate_mock_function
-from meta_generate.plan_executor import PlanExecutor, generate_plan
+from meta_generate.plan_executor import  generate_plan
 from meta_generate.signatures import CodeGenerateRequest
 import re
 
-from meta_generate.utils import execute_generated_func, generate_mock_data
+from meta_generate.utils import _execute_generated_func, generate_with_mock_func, generate_mock_function, insert_mock_data
 
 logging.basicConfig(level=logging.INFO)
 mcp_client = Client("http://127.0.0.1:8999/mcp")
@@ -27,11 +26,7 @@ async def generate_mata():
         args = parse_args()
 
         tools = await list_tools(mcp_client)
-        all_tools = tools + [
-            generate_mock_function,
-            execute_generated_func,
-            generate_mock_data,
-        ]
+        all_tools = tools 
         logging.info(f"User request: {args.user_request}")
 
         ask = dspy.ReAct(CodeGenerateRequest, tools=all_tools)
@@ -51,7 +46,7 @@ async def main():
     logging.info("Generated Code:")
     logging.info(raw_code)
 
-    mock_res = generate_mock_data(raw_code, 10)
+    mock_res = generate_with_mock_func(raw_code, 10)
     logging.info(f"Generated {len(mock_res)} mock records.")
 
 
@@ -64,15 +59,20 @@ async def exe_plan():
     async with mcp_client:
         dspy.configure(lm=Lm_Glm)
         dspy.configure(show_guidelines=True)
-        # args = parse_args()
+        args = parse_args()
 
         tools = await list_tools(mcp_client)
-        TOOL_REGISTRY = {tool.name: tool for tool in tools}
+        all_tools = tools 
+        TOOL_REGISTRY = {tool.name: tool for tool in all_tools}
+        TOOL_REGISTRY.update({
+            "generate_mock_function": generate_mock_function,
+            "generate_with_mock_func": generate_with_mock_func,
+            "insert_mock_data": insert_mock_data
+        })
         logging.info(TOOL_REGISTRY)
 
-        # request = "Generate users and products, then create orders linking them, and insert all into DB."
-        # plan_json = generate_plan(request, tools)
-        # print("Plan:\n", plan_json)
+        plan_json = generate_plan(args.user_request, tools)
+        print("Plan:\n", plan_json)
 
         # executor = PlanExecutor(TOOL_REGISTRY)
         # final_context = executor.execute_plan(plan_json)
