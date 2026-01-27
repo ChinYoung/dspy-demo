@@ -1,29 +1,6 @@
 import dspy
 
 
-class CodeGenerateRequest(dspy.Signature):
-    """
-    You are a code generator that produces mock data for database testing.
-
-    Generate a single Python function named exactly `generate_mock_data` that:
-    - Takes one argument: `n: int` (number of records to generate).
-    - Returns a list of `n` dictionaries for each table, in a dictionary with table names as keys.
-    - You may use `random`, `datetime`, and `timedelta` — but **import them inside the function**.
-    - for multiple database, define mock functions separately, call them in the main function and return combined results.
-    - Do **not** include any database logic, print statements, or example usage.
-    - Do **not** use external libraries (e.g., faker, numpy).
-    - Output **only** the function definition, wrapped in ```python ... ```.
-    - The function must be immediately executable via `exec()` and callable as `generate_mock_data(n)`.
-    """
-
-    user_requirements: str = dspy.InputField(
-        desc="User requirements for the code to be generated."
-    )
-    generated_code: str = dspy.OutputField(
-        desc="The generated code based on the requirements."
-    )
-
-
 class GenerateExecutionPlan(dspy.Signature):
     """
     Generate a structured execution plan with explicit step dependencies.
@@ -61,4 +38,27 @@ class GenerateExecutionPlan(dspy.Signature):
         }
         Ensure all referenced step IDs exist and form a valid DAG.
         """
+    )
+
+
+class GenerateMockFunction(dspy.Signature):
+    """Generate a mock data function that respects foreign key dependencies."""
+
+    table_name: str = dspy.InputField()
+    schema: str = dspy.InputField(desc="JSON-like dict of column:type")
+    fk_deps: str = dspy.InputField(
+        desc="Comma-separated list of referenced tables, e.g., 'users,products'"
+    )
+    n_example: int = dspy.InputField()
+    code: str = dspy.OutputField(desc="Python function in ```python ... ```")
+
+
+class GetTableSchemas(dspy.Signature):
+    """Retrieve database table schemas."""
+
+    table_names: str = dspy.InputField(
+        desc="Comma-separated list of table names to retrieve schemas for, if not provided, retrieve all."
+    )
+    schemas: str = dspy.OutputField(
+        desc="JSON dict mapping table names to their schema dicts"
     )

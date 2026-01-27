@@ -6,21 +6,11 @@ import random  # 若 mock 函数依赖标准库，需显式导入
 import datetime as _dt_module
 import dspy
 
-from fastmcp import Client  # 允许安全导入 datetime
+from fastmcp import Client
+
+from meta_generate.signatures import GenerateMockFunction  # 允许安全导入 datetime
 
 # dspy_generator.py
-
-
-class GenerateMockFunction(dspy.Signature):
-    """Generate a mock data function that respects foreign key dependencies."""
-
-    table_name: str = dspy.InputField()
-    schema: str = dspy.InputField(desc="JSON-like dict of column:type")
-    fk_deps: str = dspy.InputField(
-        desc="Comma-separated list of referenced tables, e.g., 'users,products'"
-    )
-    n_example: int = dspy.InputField()
-    code: str = dspy.OutputField(desc="Python function in ```python ... ```")
 
 
 def generate_mock_function(
@@ -100,7 +90,7 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
         raise RuntimeError(f"Failed to execute mock function: {e}")
 
 
-def generate_with_mock_func(code: str, n: int) -> list[dict]:
+def _generate_with_mock_func(code: str, n: int) -> list[dict]:
     """
     execute the generated mock function and return the records with target length.
     :param code, generated mock function code
@@ -136,7 +126,7 @@ async def _insert_records(records: list[dict], tablename: str, client: Client) -
     return {"status": status, "count": inserted, "failures": failures}
 
 
-async def insert_mock_data_async(
+async def _insert_mock_data_async(
     records: list[dict], tablename: str, client: Client
 ) -> dict:
     """
@@ -153,14 +143,17 @@ async def insert_mock_data_async(
     return await _insert_records(records, tablename, client)
 
 
-def insert_mock_data(records: list[dict], tablename: str, client: Client) -> dict:
+def insert_mock_data(code: str, tablename: str, client: Client, n=10) -> dict:
     """
-    Convenience wrapper that runs `insert_mock_data_async` from sync code.
-
-    If an event loop is already running, call and await
-    `insert_mock_data_async` directly instead of this wrapper.
+    Generate records with generate mock function and insert into the database via MCP HTTP tool.
+    This calls the MCP tool `db_insert_record(table_name: str, record: dict)`
+    exposed by the MCP server. Intended for use in sync contexts.
+    :param code: generated mock function code
+    :param tablename: target table name
+    :param client: MCP HTTP client
+    :param n: number of records to generate
     """
-
+    records = _generate_with_mock_func(code, n=n)
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -172,4 +165,4 @@ def insert_mock_data(records: list[dict], tablename: str, client: Client) -> dic
             "call insert_mock_data_async instead."
         )
 
-    return asyncio.run(insert_mock_data_async(records, tablename, client))
+    return asyncio.run(_insert_mock_data_async(records, tablename, client))

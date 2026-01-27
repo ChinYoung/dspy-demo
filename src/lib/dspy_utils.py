@@ -1,3 +1,4 @@
+from typing import List
 import dspy
 import logging
 from fastmcp import Client
@@ -21,16 +22,25 @@ def init_dspy(lm=None):
     logging.info("Initializing dspy with local Ollama LLM...")
     logging.info("Configuring dspy...")
     dspy.configure(lm=lm, logging=True)
+    # Allow calling async MCP-backed tools from sync code paths safely.
+    # This prevents "coroutine ... was never awaited" warnings when MCP tools
+    # are converted to async functions by `dspy.Tool.from_mcp_tool` and later
+    # invoked in synchronous contexts.
+    try:
+        dspy.settings.allow_tool_async_sync_conversion = True
+    except Exception:
+        logging.warning(
+            "Failed to set allow_tool_async_sync_conversion on dspy.settings"
+        )
     logging.info("dspy configuration complete.")
 
 
-async def list_tools(client: Client):
-    dspy_tools = []
-    async with client:
-        tools = await client.list_tools()
-        for tool in tools:
-            logging.info(f"Found tool: {tool.name} - {tool.description}")
-            dspy_tools.append(dspy.Tool.from_mcp_tool(client.session, tool))
+async def list_tools(client: Client) -> List[dspy.Tool]:
+    dspy_tools: List[dspy.Tool] = []
+    tools = await client.list_tools()
+    for tool in tools:
+        logging.info(f"Found tool: {tool.name} - {tool.description}")
+        dspy_tools.append(dspy.Tool.from_mcp_tool(client.session, tool))
     return dspy_tools
 
 

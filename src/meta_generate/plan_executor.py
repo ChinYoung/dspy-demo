@@ -1,4 +1,5 @@
 # plan_executor.py
+from email.policy import default
 import json
 import re
 from typing import Any, Dict, List, Set
@@ -9,11 +10,6 @@ from typing import Dict, Any, Callable
 # dspy_plan.py
 import dspy
 from mcp import Tool
-
-
-# 明确标注：函数接受任意 kwargs，返回任意可序列化对象
-ToolFunction = Callable[..., Any]
-
 
 """
 {
@@ -42,21 +38,37 @@ ToolFunction = Callable[..., Any]
 """
 
 
+# 明确标注：函数接受任意 kwargs，返回任意可序列化对象
+ToolFunction = Callable[..., Any]
+
+
 class GenerateDAGPlan(dspy.Signature):
     """
-    create a DAG plan in JSON format with provided utils to generate mock data for all the tables, insert into database.
+    create a DAG plan in JSON format with provided utils to generate mock data for all the tables and insert the generated mock data into the database.
     - ** respecting foreign key constraints **
     - ** Use provided tools only **
     """
+
+    user_request: str = dspy.InputField(
+        default="Generate mock data for all tables based on the retrieved schemas, respecting foreign key constraints, and insert them into the database. Use the available tools only."
+    )
+    database_schema: str = dspy.InputField(
+        desc="Database schema, including tables, columns, data types, and foreign key relationships."
+    )
+    tool_descriptions: str = dspy.InputField(
+        desc="Available tools with their names and descriptions."
+    )
     plan: str = dspy.OutputField(
         desc="JSON with 'steps' array. Each step has 'id', 'tool', 'args', 'desc'. Use @<step_id>.<field> to reference results."
     )
 
 
-def generate_plan(user_request: str, tools: List):
-    predictor = dspy.ReAct(GenerateDAGPlan, tools=tools)
+def generate_plan(user_request: str, tool_descriptions: str, database_schema: str):
+    predictor = dspy.ChainOfThought(GenerateDAGPlan)
     response = predictor(
         user_request=user_request,
+        tool_descriptions=tool_descriptions,
+        database_schema=database_schema,
     )
     return response.plan
 
