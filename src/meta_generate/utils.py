@@ -2,10 +2,22 @@
 import asyncio
 import logging
 import types
+import inspect
 import random  # 若 mock 函数依赖标准库，需显式导入
 import datetime as _dt_module
 import string
+import math
+import time
+import uuid
 import dspy
+import typing
+
+# Ensure datetime module exposes utcnow for generated code using `datetime.utcnow()`
+if not hasattr(_dt_module, "utcnow"):
+    _dt_module.utcnow = _dt_module.datetime.utcnow
+# Ensure datetime module exposes now for generated code using `datetime.now()`
+if not hasattr(_dt_module, "now"):
+    _dt_module.now = _dt_module.datetime.now
 
 from fastmcp import Client
 
@@ -20,7 +32,7 @@ def generate_mock_function(
     fk_deps: list | None = None,
     n_example: int = 5,
 ) -> dict:
-    """Generate a mock data function that respects foreign key dependencies.
+    """Generate a mock data function that respects foreign key dependencies, function name defaults to generate_mock_data.
 
     `schema` and `fk_deps` are optional to tolerate plans that omit them; they
     default to empty structures so callers that only provide `table_name` don't
@@ -68,6 +80,10 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
             "random": random,
             "datetime": _dt_module,
             "string": string,
+            "math": math,
+            "time": time,
+            "uuid": uuid,
+            "typing": typing,
         }
         if name in allowed:
             return allowed[name]
@@ -86,10 +102,19 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
             "round": round,
             "random": random,  # 显式允许
             "string": string,
+            "math": math,
+            "time": time,
+            "uuid": uuid,
+            "timedelta": _dt_module.timedelta,
             "__import__": _safe_import,  # 控制 import 行为
         },
         "datetime": _dt_module,
         "string": string,
+        "math": math,
+        "time": time,
+        "uuid": uuid,
+        "timedelta": _dt_module.timedelta,
+        "typing": typing,
         "__name__": "__mock__",
     }
     local_env = {}
@@ -121,7 +146,21 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
                     f"Function '{func_name}' not found in generated code. Available: {available}"
                 )
 
-        result = func(**kwargs)
+        # Filter kwargs to what the function accepts to avoid unexpected kw errors
+        sig = inspect.signature(func)
+        accepts_var_kw = any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values())
+        call_kwargs = {}
+        for k, v in kwargs.items():
+            if k in sig.parameters or accepts_var_kw:
+                call_kwargs[k] = v
+            else:
+                logging.warning(
+                    "Dropping unused argument '%s' for generated function %s",
+                    k,
+                    func.__name__,
+                )
+
+        result = func(**call_kwargs)
         if not isinstance(result, list):
             raise TypeError(
                 "Mock function must return a dict mapping table names to lists of records."
@@ -132,47 +171,52 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
         raise RuntimeError(f"Failed to execute mock function: {e}")
 
 
-def _generate_with_mock_func(code: str, n: int) -> list[dict]:
+def _generate_with_mock_func(code: str, tablename: str, n: int) -> list[dict]:
     """
     execute the generated mock function and return the records with target length.
     :param code, generated mock function code
+    :param tablename: table name to pass to the generated function
     :param n: number of records to generate per table
     """
-    records = _execute_generated_func(code, func_name="generate_mock_data", n=n)
+    records = _execute_generated_func(
+        code, func_name="generate_mock_data", table_name=tablename, n=n
+    )
     logging.info(records)
     return records
 
 
 async def _insert_records(records: list[dict], tablename: str) -> dict:
-    """Async helper that streams records into the MCP tool."""
+    """Async helper that batch inserts records into the MCP tool."""
 
-    inserted = 0
-    failures = []
+    if not records:
+        return {"status": "noop", "count": 0, "failures": []}
+
     mcp_client = Client("http://127.0.0.1:8999/mcp")
     async with mcp_client:
-        for idx, record in enumerate(records):
-            try:
-                await mcp_client.call_tool(
-                    "db_insert_record",
-                    {
-                        "table_name": tablename,
-                        "record": record,
-                    },
-                )
-                inserted += 1
-            except Exception as exc:  # noqa: BLE001
-                logging.error("Insert failed for record %s: %s", idx, exc)
-                failures.append({"index": idx, "error": str(exc)})
-
-    status = "success" if not failures else "partial"
-    return {"status": status, "count": inserted, "failures": failures}
+        try:
+            logging.info(f"Batch inserting {len(records)} records into '{tablename}'")
+            await mcp_client.call_tool(
+                "db_batch_insert_records",
+                {
+                    "table_name": tablename,
+                    "records": records,
+                },
+            )
+            return {"status": "success", "count": len(records), "failures": []}
+        except Exception as exc:  # noqa: BLE001
+            logging.error("Batch insert failed for table '%s': %s", tablename, exc)
+            return {
+                "status": "failed",
+                "count": 0,
+                "failures": [{"error": str(exc)}],
+            }
 
 
 async def _insert_mock_data_async(records: list[dict], tablename: str) -> dict:
     """
     Insert generated mock records into the database via MCP HTTP tool.
 
-    This calls the MCP tool `db_insert_record(table_name: str, record: dict)`
+    This calls the MCP tool `db_batch_insert_records(table_name: str, records: List[dict])`
     exposed by the MCP server. Intended for use when an event loop already
     exists.
     """
@@ -191,6 +235,6 @@ async def insert_mock_data(code: str, tablename: str, n=10) -> dict:
     `dspy.Tool`, the sync call path will execute the coroutine thanks to
     `allow_tool_async_sync_conversion` being enabled in `init_dspy`.
     """
-    records = _generate_with_mock_func(code, n=n)
+    records = _generate_with_mock_func(code, tablename=tablename, n=n)
     logging.info(f"Inserting {len(records)} records into table '{tablename}'")
     return await _insert_mock_data_async(records, tablename)
