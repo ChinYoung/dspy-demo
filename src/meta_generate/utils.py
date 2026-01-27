@@ -47,7 +47,7 @@ def generate_mock_function(
     schema = schema or {}
     fk_deps = fk_deps or []
 
-    fk_info = ", ".join(fk_deps) if fk_deps else "none"
+    fk_info = ", ".join(str(dep) for dep in fk_deps) if fk_deps else "none"
 
     predictor = dspy.Predict(GenerateMockFunction)
     response = predictor(
