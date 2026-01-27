@@ -78,7 +78,7 @@ class PlanExecutor:
         self.tools = tool_registry
         self.context = {}  # step_id -> result_dict
 
-    def execute_plan(self, plan_json: str) -> Any:
+    async def execute_plan_async(self, plan_json: str) -> Any:
         plan = json.loads(plan_json)
         steps = plan["steps"]
 
@@ -93,11 +93,39 @@ class PlanExecutor:
         for step_id in execution_order:
             step = step_map[step_id]
             resolved_args = self._resolve_args(step["args"])
-            result = self.tools[step["tool"]](**resolved_args)
+
+            tool = self.tools[step["tool"]]
+            if hasattr(tool, "acall"):
+                result = await tool.acall(**resolved_args)
+            else:
+                result = tool(**resolved_args)
+
             self.context[step_id] = result
-            print(f"✅ Executed {step_id}: {result.get('count', 'done')}")
+
+            # Some tools return plain strings instead of dicts; be defensive to avoid AttributeError.
+            if isinstance(result, dict):
+                summary = result.get("count", result.get("status", "done"))
+            else:
+                summary = str(result)
+            print(f"✅ Executed {step_id}: {summary}")
 
         return self.context
+
+    def execute_plan(self, plan_json: str) -> Any:
+        """Sync wrapper that runs the async execution. Avoid when already in an event loop."""
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            raise RuntimeError(
+                "execute_plan must be awaited in an async context; call execute_plan_async instead."
+            )
+
+        return asyncio.run(self.execute_plan_async(plan_json))
 
     def _build_dependencies(self, steps: list) -> Dict[str, Set[str]]:
         """构建 step_id -> {依赖的 step_id} 的映射"""

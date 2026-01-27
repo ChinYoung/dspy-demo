@@ -20,6 +20,8 @@ async def run_plan():
     logging.info(f"Loading generated plan from {SCRIPT_DIR / 'generated.json'}")
     dspy.configure(show_guidelines=True)
     dspy.configure(lm=Lm_Glm)
+    # Allow sync tool calls to execute async implementations (e.g., insert_mock_data)
+    dspy.settings.allow_tool_async_sync_conversion = True
     async with mcp_client:
         with open(SCRIPT_DIR / "generated.json", "r", encoding="utf-8") as f:
             generated_plan_json = f.read()
@@ -28,7 +30,7 @@ async def run_plan():
             TOOL_REGISTRY["generate_mock_function"] = dspy.Tool(generate_mock_function)
             TOOL_REGISTRY["insert_mock_data"] = dspy.Tool(insert_mock_data)
             executor = PlanExecutor(TOOL_REGISTRY)
-            final_context = executor.execute_plan(generated_plan_json)
+            final_context = await executor.execute_plan_async(generated_plan_json)
             logging.info(f"Final Execution Context: {final_context}")
 
 

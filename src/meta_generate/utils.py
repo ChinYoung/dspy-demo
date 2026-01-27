@@ -4,6 +4,7 @@ import logging
 import types
 import random  # 若 mock 函数依赖标准库，需显式导入
 import datetime as _dt_module
+import string
 import dspy
 
 from fastmcp import Client
@@ -18,12 +19,17 @@ def generate_mock_function(
     schema: dict | None = None,
     fk_deps: list | None = None,
     n_example: int = 5,
-) -> str:
+) -> dict:
     """Generate a mock data function that respects foreign key dependencies.
 
     `schema` and `fk_deps` are optional to tolerate plans that omit them; they
     default to empty structures so callers that only provide `table_name` don't
     crash. Supplying real schema/fk info is recommended for higher fidelity.
+    :param table_name: target table name
+    :param schema: optional table schema dict
+    :param fk_deps: optional list of foreign key dependency descriptions
+    :param n_example: number of example records to generate in the function docstring
+    :return: dict with generated function code under 'code' key and table name under 'table' key
     """
 
     schema = schema or {}
@@ -42,7 +48,10 @@ def generate_mock_function(
     match = re.search(r"```python\n(.*?)\n```", response.code, re.DOTALL)
     if not match:
         raise ValueError("No valid code block found")
-    return match.group(1).strip()
+
+    code = match.group(1).strip()
+    # Return a dict so downstream plan references like @<step>.code resolve correctly.
+    return {"code": code, "table": table_name}
 
 
 def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **kwargs):
@@ -58,6 +67,7 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
         allowed = {
             "random": random,
             "datetime": _dt_module,
+            "string": string,
         }
         if name in allowed:
             return allowed[name]
@@ -75,20 +85,41 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
             "float": float,
             "round": round,
             "random": random,  # 显式允许
+            "string": string,
             "__import__": _safe_import,  # 控制 import 行为
         },
+        "datetime": _dt_module,
+        "string": string,
         "__name__": "__mock__",
     }
     local_env = {}
 
     try:
         exec(code, safe_globals, local_env)
-        if func_name not in local_env:
-            raise ValueError(f"Function '{func_name}' not found in generated code.")
-
-        func = local_env[func_name]
-        if not isinstance(func, types.FunctionType):
-            raise TypeError(f"'{func_name}' is not a function.")
+        func = None
+        if func_name in local_env:
+            func = local_env[func_name]
+            if not isinstance(func, types.FunctionType):
+                raise TypeError(f"'{func_name}' is not a function.")
+        else:
+            # Fallback: pick the first function defined in the generated code.
+            funcs = [v for v in local_env.values() if isinstance(v, types.FunctionType)]
+            if len(funcs) == 1:
+                func = funcs[0]
+                logging.warning(
+                    "Function '%s' not found; using first defined function '%s' as fallback.",
+                    func_name,
+                    func.__name__,
+                )
+            else:
+                available = [
+                    name
+                    for name, v in local_env.items()
+                    if isinstance(v, types.FunctionType)
+                ]
+                raise ValueError(
+                    f"Function '{func_name}' not found in generated code. Available: {available}"
+                )
 
         result = func(**kwargs)
         if not isinstance(result, list):
@@ -152,26 +183,14 @@ async def _insert_mock_data_async(records: list[dict], tablename: str) -> dict:
     return await _insert_records(records, tablename)
 
 
-def insert_mock_data(code: str, tablename: str, n=10) -> dict:
+async def insert_mock_data(code: str, tablename: str, n=10) -> dict:
     """
-    Generate records with generate mock function and insert into the database via MCP HTTP tool.
-    This calls the MCP tool `db_insert_record(table_name: str, record: dict)`
-    exposed by the MCP server. Intended for use in sync contexts.
-    :param code: generated mock function code
-    :param tablename: target table name
-    :param client: MCP HTTP client
-    :param n: number of records to generate
+    Generate records with generated mock function and insert into the database via MCP HTTP tool.
+
+    This is async so it can be called safely from running event loops. When wrapped by
+    `dspy.Tool`, the sync call path will execute the coroutine thanks to
+    `allow_tool_async_sync_conversion` being enabled in `init_dspy`.
     """
     records = _generate_with_mock_func(code, n=n)
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        raise RuntimeError(
-            "insert_mock_data must be awaited in an async context; "
-            "call insert_mock_data_async instead."
-        )
-
-    return asyncio.run(_insert_mock_data_async(records, tablename))
+    logging.info(f"Inserting {len(records)} records into table '{tablename}'")
+    return await _insert_mock_data_async(records, tablename)
