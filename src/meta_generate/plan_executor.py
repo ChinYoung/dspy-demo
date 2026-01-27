@@ -82,8 +82,8 @@ class PlanExecutor:
         plan = json.loads(plan_json)
         steps = plan["steps"]
 
-        # 构建依赖图
-        step_map = {step["id"]: step for step in steps}
+        # 构建依赖图（统一将 step_id 规范为字符串，避免 int/str 混用导致的 KeyError）
+        step_map = {str(step["id"]): step for step in steps}
         dependencies = self._build_dependencies(steps)
 
         # 拓扑排序
@@ -101,12 +101,12 @@ class PlanExecutor:
 
     def _build_dependencies(self, steps: list) -> Dict[str, Set[str]]:
         """构建 step_id -> {依赖的 step_id} 的映射"""
-        deps = {step["id"]: set() for step in steps}
+        deps = {str(step["id"]): set() for step in steps}
         for step in steps:
             for value in self._extract_references(step["args"]):
                 if value.startswith("@"):
                     ref_step = value.split(".")[0][1:]  # "@users.id_list" → "users"
-                    deps[step["id"]].add(ref_step)
+                    deps[str(step["id"])].add(str(ref_step))
         return deps
 
     def _extract_references(self, obj):
@@ -127,9 +127,11 @@ class PlanExecutor:
         from collections import deque
 
         indegree = {node: 0 for node in nodes}
-        for deps in dependencies.values():
+        for step, deps in dependencies.items():
             for dep in deps:
-                indegree[dep] += 1
+                if dep not in indegree:
+                    raise ValueError(f"Plan references undefined step id '{dep}'")
+                indegree[step] += 1
 
         queue = deque([n for n in nodes if indegree[n] == 0])
         order = []
@@ -155,7 +157,7 @@ class PlanExecutor:
                 parts = value[1:].split(
                     ".", 1
                 )  # "@step_id.field" → ["step_id", "field"]
-                step_id = parts[0]
+                step_id = str(parts[0])
                 field = parts[1] if len(parts) > 1 else "result"
 
                 if step_id not in self.context:

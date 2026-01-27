@@ -14,9 +14,20 @@ from meta_generate.signatures import GenerateMockFunction  # 允许安全导入 
 
 
 def generate_mock_function(
-    table_name: str, schema: dict, fk_deps: list, n_example: int = 5
+    table_name: str,
+    schema: dict | None = None,
+    fk_deps: list | None = None,
+    n_example: int = 5,
 ) -> str:
-    """Generate a mock data function that respects foreign key dependencies."""
+    """Generate a mock data function that respects foreign key dependencies.
+
+    `schema` and `fk_deps` are optional to tolerate plans that omit them; they
+    default to empty structures so callers that only provide `table_name` don't
+    crash. Supplying real schema/fk info is recommended for higher fidelity.
+    """
+
+    schema = schema or {}
+    fk_deps = fk_deps or []
 
     fk_info = ", ".join(fk_deps) if fk_deps else "none"
 
@@ -101,16 +112,16 @@ def _generate_with_mock_func(code: str, n: int) -> list[dict]:
     return records
 
 
-async def _insert_records(records: list[dict], tablename: str, client: Client) -> dict:
+async def _insert_records(records: list[dict], tablename: str) -> dict:
     """Async helper that streams records into the MCP tool."""
 
     inserted = 0
     failures = []
-
-    async with client:
+    mcp_client = Client("http://127.0.0.1:8999/mcp")
+    async with mcp_client:
         for idx, record in enumerate(records):
             try:
-                await client.call_tool(
+                await mcp_client.call_tool(
                     "db_insert_record",
                     {
                         "table_name": tablename,
@@ -126,9 +137,7 @@ async def _insert_records(records: list[dict], tablename: str, client: Client) -
     return {"status": status, "count": inserted, "failures": failures}
 
 
-async def _insert_mock_data_async(
-    records: list[dict], tablename: str, client: Client
-) -> dict:
+async def _insert_mock_data_async(records: list[dict], tablename: str) -> dict:
     """
     Insert generated mock records into the database via MCP HTTP tool.
 
@@ -140,10 +149,10 @@ async def _insert_mock_data_async(
     if not records:
         return {"status": "noop", "count": 0, "failures": []}
 
-    return await _insert_records(records, tablename, client)
+    return await _insert_records(records, tablename)
 
 
-def insert_mock_data(code: str, tablename: str, client: Client, n=10) -> dict:
+def insert_mock_data(code: str, tablename: str, n=10) -> dict:
     """
     Generate records with generate mock function and insert into the database via MCP HTTP tool.
     This calls the MCP tool `db_insert_record(table_name: str, record: dict)`
@@ -165,4 +174,4 @@ def insert_mock_data(code: str, tablename: str, client: Client, n=10) -> dict:
             "call insert_mock_data_async instead."
         )
 
-    return asyncio.run(_insert_mock_data_async(records, tablename, client))
+    return asyncio.run(_insert_mock_data_async(records, tablename))
