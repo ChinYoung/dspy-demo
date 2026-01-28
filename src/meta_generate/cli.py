@@ -43,18 +43,41 @@ async def exe_plan():
         schema_res = await action.acall()
         logging.info("Schema Retrieval Result:\n%s", schema_res)
 
+        # Parse schemas to extract foreign key information
+        try:
+            schemas_dict = json.loads(schema_res.schemas)
+        except (json.JSONDecodeError, AttributeError):
+            schemas_dict = {}
+
+        # Build foreign key column mapping for each table
+        fk_columns_map = {}
+        for table_name, table_info in schemas_dict.items():
+            if isinstance(table_info, dict):
+                fk_columns = table_info.get("foreign_keys", {})
+                fk_columns_map[table_name] = fk_columns
+
         # generate plan
         TOOL_DESC = {tool.name: tool.desc for tool in tools}
         TOOL_DESC.update(
             {
-                "generate_mock_function": generate_mock_function.__doc__,
-                "insert_mock_data": insert_mock_data.__doc__,
+                "generate_mock_function": (
+                    "Generate a mock data function for a table. "
+                    "Parameters: table_name (str), schema (dict), fk_deps (list), fk_columns (dict), n_example (int). "
+                    "Returns: dict with 'code' (generated function code) and 'table' (table name). "
+                    "fk_columns should map foreign key column names to their referenced tables, e.g., {'user_id': 'users'}."
+                ),
+                "insert_mock_data": (
+                    "Generate mock data using the generated function and insert into the database. "
+                    "Parameters: code (str), tablename (str), n (int), **fk_ids (keyword args for foreign key IDs). "
+                    "Returns: dict with 'records', 'id_list' (for downstream reference), 'count', and 'status'. "
+                    "For tables with foreign keys, pass the IDs from parent tables, e.g., category_ids=[1,2,3]."
+                ),
             }
         )
         logging.info(TOOL_DESC)
         tool_desc = build_tool_desc(TOOL_DESC)
         # args = parse_args()
-        user_request = "Generate mock data for all tables based on the retrieved schemas, respecting foreign key constraints, and insert them into the database. Use the available tools only."
+        user_request = "Generate mock data for all tables based on the retrieved schemas, respecting foreign key constraints, and insert them into the database. Use the available tools only"
         plan = generate_plan(user_request, tool_desc, schema_res.schemas)
         plan_json = (
             plan.model_dump_json(indent=2)

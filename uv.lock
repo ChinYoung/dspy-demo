@@ -781,6 +781,7 @@ dependencies = [
     { name = "chromadb" },
     { name = "datasets" },
     { name = "dspy", extra = ["mcp"] },
+    { name = "faker" },
     { name = "fastmcp" },
     { name = "mem0ai" },
     { name = "ollama" },
@@ -793,6 +794,7 @@ requires-dist = [
     { name = "chromadb", specifier = ">=1.4.1" },
     { name = "datasets", specifier = "<4.0.0" },
     { name = "dspy", extras = ["mcp"], specifier = ">=3.0.4" },
+    { name = "faker", specifier = ">=40.1.2" },
     { name = "fastmcp", specifier = ">=2.14.2" },
     { name = "mem0ai", specifier = ">=1.0.2" },
     { name = "ollama", specifier = ">=0.6.1" },
@@ -832,6 +834,18 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl", hash = "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598" },
+]
+
+[[package]]
+name = "faker"
+version = "40.1.2"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/5e/77/1c3ff07b6739b9a1d23ca01ec0a90a309a33b78e345a3eb52f9ce9240e36/faker-40.1.2.tar.gz", hash = "sha256:b76a68163aa5f171d260fc24827a8349bc1db672f6a665359e8d0095e8135d30" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/46/ec/91a434c8a53d40c3598966621dea9c50512bec6ce8e76fa1751015e74cef/faker-40.1.2-py3-none-any.whl", hash = "sha256:93503165c165d330260e4379fd6dc07c94da90c611ed3191a0174d2ab9966a42" },
 ]
 
 [[package]]

@@ -10,81 +10,11 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 import dspy
 from mcp import Tool
 
-"""
-{
-  "steps": [
-    {
-      "id": "step_users",
-      "tool": "generate_users",
-      "args": {"n": 10}
-    },
-    {
-      "id": "step_products",
-      "tool": "generate_products",
-      "args": {"n": 5}
-    },
-    {
-      "id": "step_orders",
-      "tool": "generate_orders",
-      "args": {
-        "user_ids": "@step_users.id_list",
-        "product_ids": "@step_products.id_list",
-        "n": 20
-      }
-    }
-  ]
-}
-"""
+from meta_generate.signatures import GenerateDAGPlan, PlanModel, PlanStep
 
 
 # 明确标注：函数接受任意 kwargs，返回任意可序列化对象
 ToolFunction = Callable[..., Any]
-
-
-class PlanStep(BaseModel):
-    id: str = Field(..., description="Unique step id")
-    tool: str = Field(..., description="Tool name to invoke")
-    args: Dict[str, Any] = Field(
-        default_factory=dict, description="Arguments for the tool"
-    )
-    desc: str | None = Field(None, description="Human-readable description")
-
-    @model_validator(mode="before")
-    @classmethod
-    def coerce_id(cls, data):
-        if isinstance(data, dict) and "id" in data:
-            data = {**data, "id": str(data["id"])}
-        return data
-
-
-class PlanModel(BaseModel):
-    steps: List[PlanStep]
-
-
-class GenerateDAGPlan(dspy.Signature):
-    """
-    create a DAG plan in JSON format with provided utils to generate mock data for all the tables and insert the generated mock data into the database.
-    - ** respecting foreign key constraints **
-    - ** Use provided tools only **
-    """
-
-    user_request: str = dspy.InputField(
-        default="""
-        Generate mock data for all tables based on the retrieved schemas, respecting foreign key constraints, and insert them into the database. Use the available tools only.
-        """
-    )
-    database_schema: str = dspy.InputField(
-        desc="Database schema, including tables, columns, data types, and foreign key relationships."
-    )
-    tool_descriptions: str = dspy.InputField(
-        desc="Available tools with their names and descriptions."
-    )
-    plan: PlanModel = dspy.OutputField(
-        desc="""
-        PlanModel with 'steps' array. Each step has 'id', 'tool', 'args', 'desc'.
-        Use @step_id.field to reference results, where step_id refers to the 'id' of previous steps and field is the key in the result dict returned by that step.
-        """
-    )
 
 
 def generate_plan(user_request: str, tool_descriptions: str, database_schema: str):

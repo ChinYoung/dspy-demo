@@ -8,6 +8,7 @@ dependencies = [
     "chromadb>=1.4.1",
     "datasets<4.0.0",
     "dspy[mcp]>=3.0.4",
+    "faker>=40.1.2",
     "fastmcp>=2.14.2",
     "mem0ai>=1.0.2",
     "ollama>=0.6.1",

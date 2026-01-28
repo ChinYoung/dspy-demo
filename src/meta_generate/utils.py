@@ -13,6 +13,7 @@ import time
 import uuid
 import dspy
 import typing
+import pytz
 
 # Ensure datetime module exposes utcnow for generated code using `datetime.utcnow()`
 if not hasattr(_dt_module, "utcnow"):
@@ -27,20 +28,50 @@ from meta_generate.signatures import GenerateMockFunction  # 允许安全导入 
 
 
 def _extract_python_code_block(text: str) -> str:
-    """Extract a single ```python fenced code block; raise if missing or empty."""
+    """
+    Extract a single ```python fenced code block; raise if missing or empty.
+    Also handles the case where the response is just a Python code string (not wrapped in JSON or markdown).
+    """
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Model output is empty; expected a ```python code block.")
 
+    # First try to extract from markdown code block
     match = re.search(r"```python\s*(.*?)\s*```", text, re.DOTALL)
-    if not match:
-        raise ValueError(
-            "Model output must be a single Markdown code block fenced with ```python."
-        )
+    if match:
+        code = match.group(1).strip()
+        if not code:
+            raise ValueError("Python code block is empty.")
+        return code
 
-    code = match.group(1).strip()
-    if not code:
-        raise ValueError("Python code block is empty.")
-    return code
+    # If no markdown block found, check if the entire text is valid Python code
+    # This handles the case where LLM returns just the Python code string
+    stripped_text = text.strip()
+    if stripped_text and not stripped_text.startswith("```"):
+        # It's not a markdown block, check if it looks like valid Python code
+        # Simple heuristic: check if it starts with common Python keywords or has proper indentation
+        lines = stripped_text.split("\n")
+        if len(lines) > 0:
+            first_line = lines[0].strip()
+            # Common Python function/class definition patterns
+            python_patterns = [
+                "def ",
+                "class ",
+                "import ",
+                "from ",
+                "# ",
+                '"""',
+                "return ",
+                "if ",
+                "for ",
+                "while ",
+                "with ",
+            ]
+            if any(first_line.startswith(pattern) for pattern in python_patterns):
+                return stripped_text
+
+    raise ValueError(
+        "Model output must be a single Markdown code block fenced with ```python."
+    )
 
 
 # dspy_generator.py
@@ -50,24 +81,33 @@ def generate_mock_function(
     table_name: str,
     schema: dict | None = None,
     fk_deps: list | None = None,
+    fk_columns: dict | None = None,
     n_example: int = 5,
 ) -> dict:
     """Generate a mock data function that respects foreign key dependencies, function name defaults to generate_mock_data.
     :param table_name: target table name
     :param schema: optional table schema dict, only include tables relevant to the target table
     :param fk_deps: optional list of foreign key dependency descriptions
+    :param fk_columns: optional dict mapping foreign key column names to referenced table names, e.g., {"user_id": "users"}
     :param n_example: number of example records to generate in the function docstring defaults to 10
     :return: dict with generated function code under 'code' key and table name under 'table' key
     """
 
     schema = schema or {}
     fk_deps = fk_deps or []
+    fk_columns = fk_columns or {}
 
     fk_info = ", ".join(str(dep) for dep in fk_deps) if fk_deps else "none"
+    fk_columns_json = json.dumps(fk_columns) if fk_columns else "{}"
 
-    predictor = dspy.Predict(GenerateMockFunction)
+    predictor = dspy.ChainOfThought(GenerateMockFunction)
+    logging.info(predictor)
     response = predictor(
-        table_name=table_name, schema=str(schema), fk_deps=fk_info, n_example=n_example
+        table_name=table_name,
+        schema=str(schema),
+        fk_deps=fk_info,
+        fk_columns=fk_columns_json,
+        n_example=n_example,
     )
 
     logging.info(f"Generated mock function for table '{table_name}':\n{response}")
@@ -85,6 +125,8 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
     :param kwargs: 传给函数的参数，如 n=10
     """
 
+    logging.info(f"Executing generated mock function:\n{code}")
+
     # 仅允许白名单模块的安全导入（用于支持代码中的 import 语句）
     def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
         allowed = {
@@ -96,6 +138,7 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
             "time": time,
             "uuid": uuid,
             "typing": typing,
+            "pytz": pytz,
         }
         if name in allowed:
             return allowed[name]
@@ -189,15 +232,16 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
         raise RuntimeError(f"Failed to execute mock function: {e}")
 
 
-def _generate_with_mock_func(code: str, tablename: str, n: int) -> list[dict]:
+def _generate_with_mock_func(code: str, tablename: str, n: int, **fk_ids) -> list[dict]:
     """
     execute the generated mock function and return the records with target length.
     :param code, generated mock function code
     :param tablename: table name to pass to the generated function
     :param n: number of records to generate per table
+    :param fk_ids: keyword arguments for foreign key IDs (e.g., user_ids=[1,2,3])
     """
     records = _execute_generated_func(
-        code, func_name="generate_mock_data", table_name=tablename, n=n
+        code, func_name="generate_mock_data", table_name=tablename, n=n, **fk_ids
     )
     logging.info(records)
     return records
@@ -244,14 +288,21 @@ async def _insert_mock_data_async(records: list[dict], tablename: str) -> dict:
     return await _insert_records(records, tablename)
 
 
-async def insert_mock_data(code: str, tablename: str, n=10) -> dict:
+async def insert_mock_data(code: str, tablename: str, n=10, **fk_ids) -> dict:
     """
     Generate records with generated mock function and insert into the database via MCP HTTP tool.
     :param code: generated mock function code
     :param tablename: target table name
     :param n: number of records to generate
-    :return: insertion result dict
+    :param fk_ids: keyword arguments for foreign key IDs (e.g., user_ids=[1,2,3], category_ids=[1,2])
+    :return: dict with 'records' (list of generated records), 'id_list' (list of IDs for downstream reference),
+             'count' (number of records), and 'status' (insertion status)
     """
-    records = _generate_with_mock_func(code, tablename=tablename, n=n)
+    records = _generate_with_mock_func(code, tablename=tablename, n=n, **fk_ids)
     logging.info(f"Inserting {len(records)} records into table '{tablename}'")
-    return await _insert_mock_data_async(records, tablename)
+    result = await _insert_mock_data_async(records, tablename)
+    # Extract IDs from records for downstream reference
+    id_list = [record.get("id") for record in records if "id" in record]
+    result["records"] = records
+    result["id_list"] = id_list
+    return result
