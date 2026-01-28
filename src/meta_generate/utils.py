@@ -1,9 +1,11 @@
 # executor.py
 import asyncio
 import logging
+import re
 import types
 import inspect
 import random  # 若 mock 函数依赖标准库，需显式导入
+import json
 import datetime as _dt_module
 import string
 import math
@@ -23,6 +25,24 @@ from fastmcp import Client
 
 from meta_generate.signatures import GenerateMockFunction  # 允许安全导入 datetime
 
+
+def _extract_python_code_block(text: str) -> str:
+    """Extract a single ```python fenced code block; raise if missing or empty."""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Model output is empty; expected a ```python code block.")
+
+    match = re.search(r"```python\s*(.*?)\s*```", text, re.DOTALL)
+    if not match:
+        raise ValueError(
+            "Model output must be a single Markdown code block fenced with ```python."
+        )
+
+    code = match.group(1).strip()
+    if not code:
+        raise ValueError("Python code block is empty.")
+    return code
+
+
 # dspy_generator.py
 
 
@@ -33,14 +53,10 @@ def generate_mock_function(
     n_example: int = 5,
 ) -> dict:
     """Generate a mock data function that respects foreign key dependencies, function name defaults to generate_mock_data.
-
-    `schema` and `fk_deps` are optional to tolerate plans that omit them; they
-    default to empty structures so callers that only provide `table_name` don't
-    crash. Supplying real schema/fk info is recommended for higher fidelity.
     :param table_name: target table name
-    :param schema: optional table schema dict
+    :param schema: optional table schema dict, only include tables relevant to the target table
     :param fk_deps: optional list of foreign key dependency descriptions
-    :param n_example: number of example records to generate in the function docstring
+    :param n_example: number of example records to generate in the function docstring defaults to 10
     :return: dict with generated function code under 'code' key and table name under 'table' key
     """
 
@@ -54,14 +70,9 @@ def generate_mock_function(
         table_name=table_name, schema=str(schema), fk_deps=fk_info, n_example=n_example
     )
 
-    # 提取代码块
-    import re
+    logging.info(f"Generated mock function for table '{table_name}':\n{response}")
 
-    match = re.search(r"```python\n(.*?)\n```", response.code, re.DOTALL)
-    if not match:
-        raise ValueError("No valid code block found")
-
-    code = match.group(1).strip()
+    code = _extract_python_code_block(response.code)
     # Return a dict so downstream plan references like @<step>.code resolve correctly.
     return {"code": code, "table": table_name}
 
@@ -78,6 +89,7 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
     def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
         allowed = {
             "random": random,
+            "json": json,
             "datetime": _dt_module,
             "string": string,
             "math": math,
@@ -93,6 +105,8 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
     safe_globals = {
         "__builtins__": {
             "range": range,
+            "enumerate": enumerate,
+            "next": next,
             "len": len,
             "int": int,
             "str": str,
@@ -101,19 +115,23 @@ def _execute_generated_func(code: str, func_name: str = "generate_mock_data", **
             "float": float,
             "round": round,
             "random": random,  # 显式允许
+            "json": json,
             "string": string,
             "math": math,
             "time": time,
             "uuid": uuid,
             "timedelta": _dt_module.timedelta,
+            "timezone": _dt_module.timezone,
             "__import__": _safe_import,  # 控制 import 行为
         },
+        "json": json,
         "datetime": _dt_module,
         "string": string,
         "math": math,
         "time": time,
         "uuid": uuid,
         "timedelta": _dt_module.timedelta,
+        "timezone": _dt_module.timezone,
         "typing": typing,
         "__name__": "__mock__",
     }
@@ -215,10 +233,9 @@ async def _insert_records(records: list[dict], tablename: str) -> dict:
 async def _insert_mock_data_async(records: list[dict], tablename: str) -> dict:
     """
     Insert generated mock records into the database via MCP HTTP tool.
-
-    This calls the MCP tool `db_batch_insert_records(table_name: str, records: List[dict])`
-    exposed by the MCP server. Intended for use when an event loop already
-    exists.
+    :param records: list of records to insert
+    :param tablename: target table name
+    :return: insertion result dict
     """
 
     if not records:
@@ -230,10 +247,10 @@ async def _insert_mock_data_async(records: list[dict], tablename: str) -> dict:
 async def insert_mock_data(code: str, tablename: str, n=10) -> dict:
     """
     Generate records with generated mock function and insert into the database via MCP HTTP tool.
-
-    This is async so it can be called safely from running event loops. When wrapped by
-    `dspy.Tool`, the sync call path will execute the coroutine thanks to
-    `allow_tool_async_sync_conversion` being enabled in `init_dspy`.
+    :param code: generated mock function code
+    :param tablename: target table name
+    :param n: number of records to generate
+    :return: insertion result dict
     """
     records = _generate_with_mock_func(code, tablename=tablename, n=n)
     logging.info(f"Inserting {len(records)} records into table '{tablename}'")

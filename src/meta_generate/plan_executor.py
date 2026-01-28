@@ -1,11 +1,10 @@
 # plan_executor.py
-from email.policy import default
 import json
+import logging
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Callable, Dict, List, Set
 
-# plan_executor.py
-from typing import Dict, Any, Callable
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 # dspy_plan.py
 import dspy
@@ -42,6 +41,26 @@ from mcp import Tool
 ToolFunction = Callable[..., Any]
 
 
+class PlanStep(BaseModel):
+    id: str = Field(..., description="Unique step id")
+    tool: str = Field(..., description="Tool name to invoke")
+    args: Dict[str, Any] = Field(
+        default_factory=dict, description="Arguments for the tool"
+    )
+    desc: str | None = Field(None, description="Human-readable description")
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_id(cls, data):
+        if isinstance(data, dict) and "id" in data:
+            data = {**data, "id": str(data["id"])}
+        return data
+
+
+class PlanModel(BaseModel):
+    steps: List[PlanStep]
+
+
 class GenerateDAGPlan(dspy.Signature):
     """
     create a DAG plan in JSON format with provided utils to generate mock data for all the tables and insert the generated mock data into the database.
@@ -50,7 +69,9 @@ class GenerateDAGPlan(dspy.Signature):
     """
 
     user_request: str = dspy.InputField(
-        default="Generate mock data for all tables based on the retrieved schemas, respecting foreign key constraints, and insert them into the database. Use the available tools only."
+        default="""
+        Generate mock data for all tables based on the retrieved schemas, respecting foreign key constraints, and insert them into the database. Use the available tools only.
+        """
     )
     database_schema: str = dspy.InputField(
         desc="Database schema, including tables, columns, data types, and foreign key relationships."
@@ -58,8 +79,11 @@ class GenerateDAGPlan(dspy.Signature):
     tool_descriptions: str = dspy.InputField(
         desc="Available tools with their names and descriptions."
     )
-    plan: str = dspy.OutputField(
-        desc="JSON with 'steps' array. Each step has 'id', 'tool', 'args', 'desc'. Use @<step_id>.<field> to reference results."
+    plan: PlanModel = dspy.OutputField(
+        desc="""
+        PlanModel with 'steps' array. Each step has 'id', 'tool', 'args', 'desc'.
+        Use @step_id.field to reference results, where step_id refers to the 'id' of previous steps and field is the key in the result dict returned by that step.
+        """
     )
 
 
@@ -78,12 +102,22 @@ class PlanExecutor:
         self.tools = tool_registry
         self.context = {}  # step_id -> result_dict
 
-    async def execute_plan_async(self, plan_json: str) -> Any:
-        plan = json.loads(plan_json)
-        steps = plan["steps"]
+    async def execute_plan_async(self, plan_json: Any) -> Any:
+        try:
+            if isinstance(plan_json, PlanModel):
+                plan_obj = plan_json
+            elif isinstance(plan_json, (dict, list)):
+                plan_obj = PlanModel.model_validate(plan_json)
+            else:
+                plan_obj = PlanModel.model_validate_json(plan_json)
+        except ValidationError as ve:
+            logging.error("Invalid plan: %s", ve)
+            raise
+
+        steps = plan_obj.steps
 
         # 构建依赖图（统一将 step_id 规范为字符串，避免 int/str 混用导致的 KeyError）
-        step_map = {str(step["id"]): step for step in steps}
+        step_map = {step.id: step for step in steps}
         dependencies = self._build_dependencies(steps)
 
         # 拓扑排序
@@ -92,9 +126,9 @@ class PlanExecutor:
         # 按顺序执行
         for step_id in execution_order:
             step = step_map[step_id]
-            resolved_args = self._resolve_args(step["args"])
+            resolved_args = self._resolve_args(step.args)
 
-            tool = self.tools[step["tool"]]
+            tool = self.tools[step.tool]
             if hasattr(tool, "acall"):
                 result = await tool.acall(**resolved_args)
             else:
@@ -111,7 +145,7 @@ class PlanExecutor:
 
         return self.context
 
-    def execute_plan(self, plan_json: str) -> Any:
+    def execute_plan(self, plan_json: Any) -> Any:
         """Sync wrapper that runs the async execution. Avoid when already in an event loop."""
         import asyncio
 
@@ -127,14 +161,31 @@ class PlanExecutor:
 
         return asyncio.run(self.execute_plan_async(plan_json))
 
-    def _build_dependencies(self, steps: list) -> Dict[str, Set[str]]:
+    @staticmethod
+    def _extract_step_id(ref: str) -> str | None:
+        """Return step id from @ref strings, extracting trailing digits when present."""
+        if not isinstance(ref, str):
+            return None
+        at_pos = ref.find("@")
+        if at_pos == -1:
+            return None
+        candidate = ref[at_pos:]
+        m = re.match(r"@\{?([^\.\s\[\}]+)\}?", candidate)
+        if m:
+            token = m.group(1)
+            digit_match = re.search(r"(\d+)", token)
+            return digit_match.group(1) if digit_match else token
+        return None
+
+    def _build_dependencies(self, steps: List[PlanStep]) -> Dict[str, Set[str]]:
         """构建 step_id -> {依赖的 step_id} 的映射"""
-        deps = {str(step["id"]): set() for step in steps}
+        deps = {step.id: set() for step in steps}
         for step in steps:
-            for value in self._extract_references(step["args"]):
-                if value.startswith("@"):
-                    ref_step = value.split(".")[0][1:]  # "@users.id_list" → "users"
-                    deps[str(step["id"])].add(str(ref_step))
+            for value in self._extract_references(step.args):
+                ref_step = self._extract_step_id(value)
+                if ref_step:
+                    logging.info(f"Step {step.id} depends on step {ref_step}")
+                    deps[step.id].add(str(ref_step))
         return deps
 
     def _extract_references(self, obj):
@@ -182,13 +233,10 @@ class PlanExecutor:
 
         def resolve_value(value):
             if isinstance(value, str) and value.startswith("@"):
-                parts = value[1:].split(
-                    ".", 1
-                )  # "@step_id.field" → ["step_id", "field"]
-                step_id = str(parts[0])
-                field = parts[1] if len(parts) > 1 else "result"
+                step_id = self._extract_step_id(value)
+                field = value.split(".", 1)[1] if "." in value else "result"
 
-                if step_id not in self.context:
+                if not step_id or step_id not in self.context:
                     raise ValueError(f"Step {step_id} not executed yet")
 
                 result = self.context[step_id]

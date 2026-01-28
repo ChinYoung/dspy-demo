@@ -1,6 +1,8 @@
+import json
 import logging
 
 import asyncio
+from pathlib import Path
 from typing import List
 import dspy
 from lib.custom_lm.lms import Lm_Glm
@@ -53,15 +55,24 @@ async def exe_plan():
         tool_desc = build_tool_desc(TOOL_DESC)
         # args = parse_args()
         user_request = "Generate mock data for all tables based on the retrieved schemas, respecting foreign key constraints, and insert them into the database. Use the available tools only."
-        plan_json = generate_plan(user_request, tool_desc, schema_res.schemas)
+        plan = generate_plan(user_request, tool_desc, schema_res.schemas)
+        plan_json = (
+            plan.model_dump_json(indent=2)
+            if hasattr(plan, "model_dump_json")
+            else json.dumps(plan, indent=2)
+        )
         print("Plan:\n", plan_json)
+        # save to ./generated.json
+        SCRIPT_DIR = Path(__file__).parent.resolve()
+        with open(SCRIPT_DIR / "generated.json", "w", encoding="utf-8") as f:
+            f.write(plan_json)
 
-        TOOL_REGISTRY = {tool.name: tool for tool in tools if tool.name is not None}
-        TOOL_REGISTRY["generate_mock_function"] = dspy.Tool(generate_mock_function)
-        TOOL_REGISTRY["insert_mock_data"] = dspy.Tool(insert_mock_data)
-        executor = PlanExecutor(TOOL_REGISTRY)
-        final_context = executor.execute_plan(plan_json)
-        logging.info(f"Final Execution Context: {final_context}")
+        # TOOL_REGISTRY = {tool.name: tool for tool in tools if tool.name is not None}
+        # TOOL_REGISTRY["generate_mock_function"] = dspy.Tool(generate_mock_function)
+        # TOOL_REGISTRY["insert_mock_data"] = dspy.Tool(insert_mock_data)
+        # executor = PlanExecutor(TOOL_REGISTRY)
+        # final_context = executor.execute_plan(plan_json)
+        # logging.info(f"Final Execution Context: {final_context}")
 
 
 def run():

@@ -50,7 +50,13 @@ class GenerateMockFunction(dspy.Signature):
         desc="Comma-separated list of referenced tables, e.g., 'users,products'"
     )
     n_example: int = dspy.InputField()
-    code: str = dspy.OutputField(desc="Python function in ```python ... ```")
+    code: str = dspy.OutputField(
+        desc=(
+            "Return a JSON object with a single key 'code'. The value must be a single "
+            "Markdown code block fenced with ```python. No prose before or after the code block. "
+            "Use only Python standard library; do not import third-party packages."
+        )
+    )
 
 
 class GetTableSchemas(dspy.Signature):
